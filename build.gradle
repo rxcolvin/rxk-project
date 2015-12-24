@@ -1,0 +1,15 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    ext.kotlin_version = '1.0.0-beta-3594'
+
+
+}
+
+
+
+task hello << { task -> println "I'm rxk root project" }
