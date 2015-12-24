@@ -7,8 +7,6 @@ package rxk.collections
 
 import java.util.ArrayList
 import java.util.HashMap
-import kotlin.collections.asList
-import kotlin.collections.forEach
 
 
 class L<T> private constructor (args:List<T>) : List<T> by  args {
