@@ -8,45 +8,40 @@ import java.io.PrintWriter
 
 
 interface LogStream {
-    fun apply(f: () -> String )
-    fun apply(f: () -> String, t:Throwable)
+    operator fun invoke(f: () -> String)
+    operator fun invoke( t: Throwable, f: () -> String)
+    var enabled: Boolean
 }
 
-class  LogStreamBase<T>(
-        val ctx: T,
-        val type: String,
-        val h: (T, () -> String) -> String,
-        val exh: (T, Throwable, () -> String) -> String,
-        val sync: Boolean = true
- ) : LogStream {
+class LogStreamBase(
+        val name: String,
+        val level: String,
+        val h: (String, String, () -> String) -> Unit,
+        val exh: (String, String, Throwable, () -> String) -> Unit,
+        val sync: Boolean = true,
+        override var enabled: Boolean = true
+) : LogStream {
 
-    private var isEnabled = false;
 
-
-    override fun apply(f: () -> String) {
-        if (isEnabled) {
+    final override fun invoke(f: () -> String) {
+        if (enabled) {
             syncMaybe(this, sync) {
-                h(ctx, f);
+                h(name, level, f);
 
             }
         }
     }
 
-    override fun apply(f: () -> String, t: Throwable) {
-        if (isEnabled) {
+    final override fun invoke(t: Throwable, f: () -> String) {
+        if (enabled) {
             syncMaybe(this, sync) {
-                exh(ctx, t, f)
+                exh(name, level, t, f)
             }
         }
     }
-
-   fun setEnabled(enabled:Boolean = true) {
-        this.isEnabled = enabled
-    }
-
 }
 
-inline fun syncMaybe(lock:Any, shouldSync: Boolean, f:() -> Unit) {
+inline fun syncMaybe(lock: Any, shouldSync: Boolean, f: () -> Unit) {
     if (shouldSync) {
         synchronized(lock, f);
     } else {
@@ -54,17 +49,50 @@ inline fun syncMaybe(lock:Any, shouldSync: Boolean, f:() -> Unit) {
     }
 }
 
-data class LogSpec(val name: String, val type:String)
 
-fun stdoutLogHandler(ctx:LogSpec, f:()->String) {
-    println("[${ctx.type}] ${ctx.name}: ${f()}")
+interface StdLogger {
+    val info: LogStream
+    val error: LogStream
+    val debug: LogStream
 }
 
-class StdLogger(name:String) {
-    val info = LogStreamBase(LogSpec("INFO", name), (logSpec: LogSpec, f: ()-> String) {}, ff)
+val sysOutPrintWriter = PrintWriter(System.out)
 
-    private fun format() {
+val _formatPw = {
+    pw: PrintWriter, name: String, level: String, f: () -> String ->
+    pw.println("${name} [${level}] ${f()}")
+    pw.flush()
+}
 
-    }
+val _formatPwE = {
+    pw: PrintWriter, name: String, level: String, t: Throwable, f: () -> String ->
+    pw.println("${name} [${level}] ${f()}")
+    t.printStackTrace(pw)
+    pw.flush()
+}
+
+class StdLoggerImpl(name: String,
+                    val formatPw: (PrintWriter, String, String, () -> String) -> Unit = _formatPw,
+                    val formatPwE: (PrintWriter, String, String, t: Throwable, () -> String) -> Unit = _formatPwE,
+                    val sync: Boolean = true,
+                    val pw: PrintWriter = sysOutPrintWriter) : StdLogger {
+
+    val format: (String, String, () -> String) -> Unit = { name: String, level: String, f: () -> String -> formatPw(pw, name, level, f) }
+    val formath: (String, String, Throwable, () -> String) -> Unit = { name: String, level: String, t: Throwable, f: () -> String -> formatPwE(pw, name, level, t, f) }
+    override val info = LogStreamBase(name, "INFO", format, formath, sync)
+    override val debug = LogStreamBase(name, "DEBUG", format, formath, sync)
+    override val error = LogStreamBase(name, "ERROR", format, formath, sync)
+}
+
+fun main(args: Array<String>) {
+    val log: StdLogger = StdLoggerImpl(name = "Test")
+
+    log.debug { "Hello Word" }
+    log.debug.enabled = false
+    log.debug { "Hello Word Again" }
+
+    log.debug.enabled = true
+    log.debug (Exception(), {" Some Exception" })
+
 }
 
